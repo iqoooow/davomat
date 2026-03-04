@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 
 const StudentDetailPage = () => {
     const { id } = useParams();
@@ -18,6 +19,7 @@ const StudentDetailPage = () => {
     const [smsModal, setSmsModal] = useState(false);
     const [smsText, setSmsText] = useState('');
     const [smsHistory, setSmsHistory] = useState([]);
+    const [exportModal, setExportModal] = useState(false);
 
     useEffect(() => {
         fetchStudentData();
@@ -110,152 +112,193 @@ const StudentDetailPage = () => {
         return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
     };
 
+    const safeName = (student?.full_name ?? 'hisobot').replace(/\s+/g, '_');
+
     const generatePDF = () => {
-        const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-        const pageW = doc.internal.pageSize.getWidth();
-        const pageH = doc.internal.pageSize.getHeight();
-        const margin = 15;
+        setExportModal(false);
+        try {
+            const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+            const pageW = doc.internal.pageSize.getWidth();
+            const pageH = doc.internal.pageSize.getHeight();
+            const m = 14;
 
-        // ── Header background ──
-        doc.setFillColor(37, 99, 235); // primary blue
-        doc.roundedRect(margin, 12, pageW - margin * 2, 42, 4, 4, 'F');
+            // Header strip
+            doc.setFillColor(37, 99, 235);
+            doc.rect(0, 0, pageW, 38, 'F');
 
-        // App name (top-left inside header)
-        doc.setTextColor(255, 255, 255);
-        doc.setFontSize(8);
-        doc.setFont('helvetica', 'normal');
-        doc.text('DAVOMAT TIZIMI', margin + 6, 21);
+            // Thin accent bar
+            doc.setFillColor(96, 165, 250);
+            doc.rect(0, 38, pageW, 2, 'F');
 
-        // Student name
-        doc.setFontSize(18);
-        doc.setFont('helvetica', 'bold');
-        const name = student?.full_name ?? '';
-        doc.text(name, margin + 6, 32);
+            // App label
+            doc.setTextColor(147, 197, 253);
+            doc.setFontSize(7);
+            doc.setFont('helvetica', 'normal');
+            doc.text('DAVOMAT TIZIMI  /  O\'QUVCHI HISOBOTI', m, 10);
 
-        // Sub-info line
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(186, 213, 255);
-        const subLine = [
-            student?.groups?.name ? `Guruh: ${student.groups.name}` : null,
-            student?.parent_phone ? `Tel: ${student.parent_phone}` : null,
-        ].filter(Boolean).join('   |   ');
-        doc.text(subLine, margin + 6, 41);
-
-        // ── Stats row ──
-        const statsY = 62;
-        const statW = (pageW - margin * 2) / 3;
-        const statBoxes = [
-            { label: "Jami darslar", value: String(attendance.length), color: [241, 245, 249], textColor: [37, 99, 235] },
-            { label: "Kelgan", value: String(presentCount), color: [240, 253, 244], textColor: [22, 163, 74] },
-            { label: "Kelmagan", value: String(absentCount), color: [255, 241, 242], textColor: [220, 38, 38] },
-        ];
-        statBoxes.forEach((s, i) => {
-            const x = margin + i * statW;
-            doc.setFillColor(...s.color);
-            doc.roundedRect(x, statsY, statW - 3, 22, 3, 3, 'F');
-            doc.setTextColor(...s.textColor);
-            doc.setFontSize(16);
+            // Student name — only ASCII-safe chars
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(20);
             doc.setFont('helvetica', 'bold');
-            doc.text(s.value, x + statW / 2 - 1.5, statsY + 12, { align: 'center' });
-            doc.setFontSize(7.5);
+            const displayName = student?.full_name ?? '';
+            doc.text(displayName, m, 25);
+
+            // Sub info
+            doc.setFontSize(8);
             doc.setFont('helvetica', 'normal');
-            doc.setTextColor(100, 116, 139);
-            doc.text(s.label, x + statW / 2 - 1.5, statsY + 18, { align: 'center' });
-        });
+            doc.setTextColor(186, 213, 255);
+            const parts = [];
+            if (student?.groups?.name) parts.push(`Guruh: ${student.groups.name}`);
+            if (student?.parent_phone) parts.push(`Tel: ${student.parent_phone}`);
+            doc.text(parts.join('    |    '), m, 33);
 
-        // Attendance % badge
-        const pctColor = attendancePercentage >= 80 ? [22, 163, 74] : attendancePercentage >= 50 ? [217, 119, 6] : [220, 38, 38];
-        doc.setFillColor(...pctColor);
-        doc.roundedRect(pageW - margin - 28, statsY, 28, 22, 3, 3, 'F');
-        doc.setTextColor(255, 255, 255);
-        doc.setFontSize(16);
-        doc.setFont('helvetica', 'bold');
-        doc.text(`${attendancePercentage}%`, pageW - margin - 14, statsY + 12, { align: 'center' });
-        doc.setFontSize(7.5);
-        doc.setFont('helvetica', 'normal');
-        doc.text('Davomat', pageW - margin - 14, statsY + 18, { align: 'center' });
-
-        // ── Section title ──
-        doc.setTextColor(15, 23, 42);
-        doc.setFontSize(11);
-        doc.setFont('helvetica', 'bold');
-        doc.text("Davomat Tarixi", margin, statsY + 32);
-
-        // Small divider
-        doc.setDrawColor(226, 232, 240);
-        doc.setLineWidth(0.3);
-        doc.line(margin, statsY + 34, pageW - margin, statsY + 34);
-
-        // ── Table ──
-        const tableData = attendance.map((rec, idx) => [
-            idx + 1,
-            formatDate(rec.date),
-            rec.status === 'present' ? 'Keldi' : 'Kelmadi',
-            rec.status === 'absent' ? (rec.sms_sent ? 'Yuborildi' : 'Yuborilmadi') : '—',
-        ]);
-
-        autoTable(doc, {
-            startY: statsY + 37,
-            head: [['№', 'Sana', 'Holat', 'SMS']],
-            body: tableData,
-            margin: { left: margin, right: margin },
-            styles: {
-                fontSize: 9,
-                cellPadding: { top: 4, bottom: 4, left: 5, right: 5 },
-                lineColor: [226, 232, 240],
-                lineWidth: 0.2,
-            },
-            headStyles: {
-                fillColor: [37, 99, 235],
-                textColor: 255,
-                fontStyle: 'bold',
-                fontSize: 9,
-                halign: 'left',
-            },
-            alternateRowStyles: { fillColor: [248, 250, 252] },
-            columnStyles: {
-                0: { cellWidth: 12, halign: 'center', textColor: [148, 163, 184] },
-                1: { cellWidth: 35, fontStyle: 'bold' },
-                2: {
-                    cellWidth: 30,
-                    fontStyle: 'bold',
+            // Stats boxes
+            const sY = 48;
+            const boxes = [
+                { label: 'Jami darslar', val: attendance.length, bg: [239, 246, 255], fg: [37, 99, 235] },
+                { label: 'Kelgan', val: presentCount, bg: [240, 253, 244], fg: [22, 163, 74] },
+                { label: 'Kelmagan', val: absentCount, bg: [255, 241, 242], fg: [220, 38, 38] },
+                {
+                    label: 'Davomat %',
+                    val: `${attendancePercentage}%`,
+                    bg: attendancePercentage >= 80 ? [240, 253, 244] : attendancePercentage >= 50 ? [255, 251, 235] : [255, 241, 242],
+                    fg: attendancePercentage >= 80 ? [22, 163, 74] : attendancePercentage >= 50 ? [180, 83, 9] : [220, 38, 38],
                 },
-                3: { cellWidth: 30, textColor: [100, 116, 139] },
-            },
-            didParseCell: (data) => {
-                if (data.section === 'body' && data.column.index === 2) {
-                    const val = data.cell.raw;
-                    data.cell.styles.textColor = val === 'Keldi' ? [22, 163, 74] : [220, 38, 38];
-                }
-                if (data.section === 'body' && data.column.index === 3) {
-                    const val = data.cell.raw;
-                    if (val === 'Yuborildi') data.cell.styles.textColor = [37, 99, 235];
-                    else if (val === 'Yuborilmadi') data.cell.styles.textColor = [239, 68, 68];
-                }
-            },
-        });
+            ];
+            const bW = (pageW - m * 2 - 9) / 4;
+            boxes.forEach((b, i) => {
+                const x = m + i * (bW + 3);
+                doc.setFillColor(...b.bg);
+                doc.roundedRect(x, sY, bW, 20, 2, 2, 'F');
+                doc.setTextColor(...b.fg);
+                doc.setFontSize(15);
+                doc.setFont('helvetica', 'bold');
+                doc.text(String(b.val), x + bW / 2, sY + 11, { align: 'center' });
+                doc.setFontSize(7);
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(100, 116, 139);
+                doc.text(b.label, x + bW / 2, sY + 17, { align: 'center' });
+            });
 
-        // ── Footer on every page ──
-        const totalPages = doc.internal.getNumberOfPages();
-        for (let i = 1; i <= totalPages; i++) {
-            doc.setPage(i);
+            // Section header
+            doc.setTextColor(15, 23, 42);
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'bold');
+            doc.text('Barcha yo\'qlamalar', m, sY + 30);
             doc.setDrawColor(226, 232, 240);
-            doc.setLineWidth(0.3);
-            doc.line(margin, pageH - 12, pageW - margin, pageH - 12);
-            doc.setFontSize(7.5);
-            doc.setFont('helvetica', 'normal');
-            doc.setTextColor(148, 163, 184);
-            doc.text(
-                `Chop etilgan: ${new Date().toLocaleDateString('ru-RU')}   |   ${name}`,
-                margin, pageH - 7
-            );
-            doc.text(`${i} / ${totalPages}`, pageW - margin, pageH - 7, { align: 'right' });
-        }
+            doc.setLineWidth(0.25);
+            doc.line(m, sY + 32, pageW - m, sY + 32);
 
-        const safeName = (student?.full_name ?? 'hisobot').replace(/\s+/g, '_');
-        doc.save(`${safeName}_davomat.pdf`);
-        toast.success('PDF yuklab olindi');
+            // Table
+            autoTable(doc, {
+                startY: sY + 35,
+                head: [['No', 'Sana', 'Holat', 'SMS holati']],
+                body: attendance.map((rec, idx) => [
+                    idx + 1,
+                    formatDate(rec.date),
+                    rec.status === 'present' ? 'Keldi' : 'Kelmadi',
+                    rec.status === 'absent'
+                        ? (rec.sms_sent ? 'SMS yuborildi' : 'SMS yuborilmadi')
+                        : '-',
+                ]),
+                margin: { left: m, right: m },
+                styles: {
+                    font: 'helvetica',
+                    fontSize: 9,
+                    cellPadding: { top: 3.5, bottom: 3.5, left: 5, right: 5 },
+                    lineColor: [226, 232, 240],
+                    lineWidth: 0.15,
+                    textColor: [30, 41, 59],
+                },
+                headStyles: {
+                    fillColor: [30, 58, 138],
+                    textColor: [255, 255, 255],
+                    fontStyle: 'bold',
+                    fontSize: 8.5,
+                    cellPadding: { top: 4, bottom: 4, left: 5, right: 5 },
+                },
+                alternateRowStyles: { fillColor: [248, 250, 252] },
+                columnStyles: {
+                    0: { cellWidth: 11, halign: 'center', textColor: [148, 163, 184] },
+                    1: { cellWidth: 32, fontStyle: 'bold' },
+                    2: { cellWidth: 28 },
+                    3: { cellWidth: 40 },
+                },
+                didParseCell(data) {
+                    if (data.section !== 'body') return;
+                    if (data.column.index === 2) {
+                        data.cell.styles.textColor =
+                            data.cell.raw === 'Keldi' ? [21, 128, 61] : [185, 28, 28];
+                        data.cell.styles.fontStyle = 'bold';
+                    }
+                    if (data.column.index === 3) {
+                        if (data.cell.raw === 'SMS yuborildi')
+                            data.cell.styles.textColor = [37, 99, 235];
+                        else if (data.cell.raw === 'SMS yuborilmadi')
+                            data.cell.styles.textColor = [156, 163, 175];
+                    }
+                },
+                didDrawPage(data) {
+                    // Footer on each page
+                    doc.setDrawColor(226, 232, 240);
+                    doc.setLineWidth(0.25);
+                    doc.line(m, pageH - 10, pageW - m, pageH - 10);
+                    doc.setFontSize(7);
+                    doc.setFont('helvetica', 'normal');
+                    doc.setTextColor(148, 163, 184);
+                    const today = new Date().toLocaleDateString('ru-RU');
+                    doc.text(`Sana: ${today}    Davomat tizimi`, m, pageH - 5.5);
+                    doc.text(
+                        `${data.pageNumber} / ${doc.internal.getNumberOfPages()}`,
+                        pageW - m, pageH - 5.5, { align: 'right' }
+                    );
+                },
+            });
+
+            doc.save(`${safeName}_davomat.pdf`);
+            toast.success('PDF yuklab olindi!');
+        } catch (e) {
+            toast.error('PDF yaratishda xatolik');
+            console.error(e);
+        }
+    };
+
+    const generateExcel = () => {
+        setExportModal(false);
+        try {
+            const rows = [
+                [`O'quvchi:`, student?.full_name ?? ''],
+                [`Guruh:`, student?.groups?.name ?? '—'],
+                [`Telefon:`, student?.parent_phone ?? '—'],
+                [`Jami darslar:`, attendance.length],
+                [`Kelgan:`, presentCount],
+                [`Kelmagan:`, absentCount],
+                [`Davomat:`, `${attendancePercentage}%`],
+                [],
+                ['№', 'Sana', 'Holat', 'SMS holati'],
+                ...attendance.map((rec, idx) => [
+                    idx + 1,
+                    formatDate(rec.date),
+                    rec.status === 'present' ? 'Keldi' : 'Kelmadi',
+                    rec.status === 'absent'
+                        ? (rec.sms_sent ? 'SMS yuborildi' : 'SMS yuborilmadi')
+                        : '—',
+                ]),
+            ];
+
+            const ws = XLSX.utils.aoa_to_sheet(rows);
+
+            // Column widths
+            ws['!cols'] = [{ wch: 6 }, { wch: 16 }, { wch: 14 }, { wch: 20 }];
+
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Davomat");
+            XLSX.writeFile(wb, `${safeName}_davomat.xlsx`);
+            toast.success('Excel yuklab olindi!');
+        } catch (e) {
+            toast.error('Excel yaratishda xatolik');
+            console.error(e);
+        }
     };
 
     return (
@@ -374,11 +417,11 @@ const StudentDetailPage = () => {
                         <h3 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">Davomat Tarixi</h3>
                         <div className="flex gap-2 items-center">
                             <button
-                                onClick={generatePDF}
+                                onClick={() => setExportModal(true)}
                                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary/10 text-primary hover:bg-primary hover:text-white text-sm font-semibold transition-all"
                             >
                                 <FiPrinter className="w-3.5 h-3.5" />
-                                PDF yuklab olish
+                                Yuklab olish
                             </button>
                             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-50 dark:bg-green-950 text-green-600 dark:text-green-400 text-xs font-bold">
                                 {presentCount} Kelgan
@@ -465,6 +508,68 @@ const StudentDetailPage = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Export Format Modal */}
+            <AnimatePresence>
+                {exportModal && (
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setExportModal(false)}
+                            className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm"
+                        />
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+                            className="relative w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 overflow-hidden"
+                        >
+                            <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                                <div>
+                                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">Yuklab olish formati</h3>
+                                    <p className="text-xs text-slate-400 mt-0.5">{student?.full_name} — davomat hisoboti</p>
+                                </div>
+                                <button onClick={() => setExportModal(false)} className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                                    <FiX className="w-4 h-4 text-slate-400" />
+                                </button>
+                            </div>
+                            <div className="p-5 grid grid-cols-2 gap-3">
+                                <button
+                                    onClick={generatePDF}
+                                    className="flex flex-col items-center gap-3 p-5 rounded-2xl border-2 border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-900/20 hover:border-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-all group"
+                                >
+                                    <div className="w-12 h-12 bg-rose-100 dark:bg-rose-900/50 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                                        <svg className="w-6 h-6 text-rose-600" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM6 20V4h5v7h7v9H6z"/>
+                                        </svg>
+                                    </div>
+                                    <div className="text-center">
+                                        <p className="font-bold text-rose-700 dark:text-rose-400 text-sm">PDF</p>
+                                        <p className="text-xs text-slate-400 mt-0.5">Chop etishga tayyor</p>
+                                    </div>
+                                </button>
+                                <button
+                                    onClick={generateExcel}
+                                    className="flex flex-col items-center gap-3 p-5 rounded-2xl border-2 border-green-200 dark:border-green-900/50 bg-green-50 dark:bg-green-900/20 hover:border-green-400 hover:bg-green-100 dark:hover:bg-green-900/40 transition-all group"
+                                >
+                                    <div className="w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                                        <svg className="w-6 h-6 text-green-600" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM9 17l-3-3h2v-4h2v4h2l-3 3z"/>
+                                        </svg>
+                                    </div>
+                                    <div className="text-center">
+                                        <p className="font-bold text-green-700 dark:text-green-400 text-sm">Excel</p>
+                                        <p className="text-xs text-slate-400 mt-0.5">Tahrirlash mumkin</p>
+                                    </div>
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
 
             {/* Custom SMS Modal */}
             <AnimatePresence>
