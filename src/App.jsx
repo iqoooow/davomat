@@ -6,6 +6,9 @@ import LoginPage from './pages/LoginPage';
 import StudentsPage from './pages/StudentsPage';
 import AttendancePage from './pages/AttendancePage';
 import StudentDetailPage from './pages/StudentDetailPage';
+import GroupsPage from './pages/GroupsPage';
+import GroupDetailPage from './pages/GroupDetailPage';
+import SmsSettingsPage from './pages/SmsSettingsPage';
 import { Toaster } from 'react-hot-toast';
 
 function App() {
@@ -30,8 +33,11 @@ function App() {
           }
         >
           <Route index element={<AttendancePage />} />
+          <Route path="groups" element={<GroupsPage />} />
+          <Route path="groups/:id" element={<GroupDetailPage />} />
           <Route path="students" element={<StudentsPage />} />
           <Route path="students/:id" element={<StudentDetailPage />} />
+          <Route path="sms-settings" element={<SmsSettingsPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

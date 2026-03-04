@@ -1,7 +1,7 @@
 import React from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { FiSun, FiMoon } from 'react-icons/fi';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 
 const ThemeToggle = () => {
     const { theme, toggleTheme } = useTheme();
@@ -9,24 +9,32 @@ const ThemeToggle = () => {
     return (
         <button
             onClick={toggleTheme}
-            className="p-2.5 rounded-xl bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-700 transition-all shadow-sm group relative overflow-hidden"
+            className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
             aria-label="Toggle Theme"
         >
-            <motion.div
-                initial={false}
-                animate={{ y: theme === 'light' ? 0 : -40 }}
-                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            >
-                <FiSun className="w-5 h-5 group-hover:text-amber-500 transition-colors" />
-            </motion.div>
-            <motion.div
-                initial={false}
-                animate={{ y: theme === 'dark' ? -25 : 20 }}
-                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                className="absolute left-2.5"
-            >
-                <FiMoon className="w-5 h-5 group-hover:text-blue-400 transition-colors" />
-            </motion.div>
+            <AnimatePresence mode="wait" initial={false}>
+                {theme === 'dark' ? (
+                    <motion.div
+                        key="moon"
+                        initial={{ opacity: 0, rotate: -30, scale: 0.8 }}
+                        animate={{ opacity: 1, rotate: 0, scale: 1 }}
+                        exit={{ opacity: 0, rotate: 30, scale: 0.8 }}
+                        transition={{ duration: 0.15 }}
+                    >
+                        <FiMoon className="w-5 h-5 text-blue-400" />
+                    </motion.div>
+                ) : (
+                    <motion.div
+                        key="sun"
+                        initial={{ opacity: 0, rotate: 30, scale: 0.8 }}
+                        animate={{ opacity: 1, rotate: 0, scale: 1 }}
+                        exit={{ opacity: 0, rotate: -30, scale: 0.8 }}
+                        transition={{ duration: 0.15 }}
+                    >
+                        <FiSun className="w-5 h-5 text-amber-500" />
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </button>
     );
 };

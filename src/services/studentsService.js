@@ -3,29 +3,31 @@ import { supabase } from './supabaseClient';
 export const uploadAvatar = async (file) => {
     const fileExt = file.name.split('.').pop();
     const fileName = `${Math.random()}.${fileExt}`;
-    const filePath = `${fileName}`;
 
     const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(filePath, file);
+        .upload(fileName, file);
 
-    if (uploadError) {
-        throw uploadError;
-    }
+    if (uploadError) throw uploadError;
 
     const { data } = supabase.storage
         .from('avatars')
-        .getPublicUrl(filePath);
+        .getPublicUrl(fileName);
 
     return data.publicUrl;
 };
 
-export const getStudents = async () => {
-    const { data, error } = await supabase
+export const getStudents = async (groupId = null) => {
+    let query = supabase
         .from('students')
-        .select('*')
+        .select('*, groups(id, name)')
         .order('full_name', { ascending: true });
 
+    if (groupId) {
+        query = query.eq('group_id', groupId);
+    }
+
+    const { data, error } = await query;
     if (error) throw error;
     return data;
 };
@@ -34,7 +36,7 @@ export const addStudent = async (student) => {
     const { data, error } = await supabase
         .from('students')
         .insert([student])
-        .select();
+        .select('*, groups(id, name)');
 
     if (error) throw error;
     return data[0];

@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient';
 export const getAttendanceByDate = async (date) => {
     const { data, error } = await supabase
         .from('attendance')
-        .select('*, students(full_name, group_name)')
+        .select('*, students(full_name, parent_phone)')
         .eq('date', date);
 
     if (error) throw error;
