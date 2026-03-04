@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabaseClient';
-import { FiArrowLeft, FiUser, FiPhone, FiCheckCircle, FiXCircle, FiSend, FiClock, FiGrid, FiX, FiMessageSquare, FiAlertCircle } from 'react-icons/fi';
+import { FiArrowLeft, FiUser, FiPhone, FiCheckCircle, FiXCircle, FiSend, FiClock, FiGrid, FiX, FiMessageSquare, FiAlertCircle, FiPrinter } from 'react-icons/fi';
 import { getSmsHistory } from '../services/smsSettingsService';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const StudentDetailPage = () => {
     const { id } = useParams();
@@ -102,6 +104,159 @@ const StudentDetailPage = () => {
     const attendancePercentage = attendance.length > 0
         ? Math.round((presentCount / attendance.length) * 100)
         : 0;
+
+    const formatDate = (dateStr) => {
+        const d = new Date(dateStr);
+        return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
+    };
+
+    const generatePDF = () => {
+        const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+        const pageW = doc.internal.pageSize.getWidth();
+        const pageH = doc.internal.pageSize.getHeight();
+        const margin = 15;
+
+        // ── Header background ──
+        doc.setFillColor(37, 99, 235); // primary blue
+        doc.roundedRect(margin, 12, pageW - margin * 2, 42, 4, 4, 'F');
+
+        // App name (top-left inside header)
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        doc.text('DAVOMAT TIZIMI', margin + 6, 21);
+
+        // Student name
+        doc.setFontSize(18);
+        doc.setFont('helvetica', 'bold');
+        const name = student?.full_name ?? '';
+        doc.text(name, margin + 6, 32);
+
+        // Sub-info line
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(186, 213, 255);
+        const subLine = [
+            student?.groups?.name ? `Guruh: ${student.groups.name}` : null,
+            student?.parent_phone ? `Tel: ${student.parent_phone}` : null,
+        ].filter(Boolean).join('   |   ');
+        doc.text(subLine, margin + 6, 41);
+
+        // ── Stats row ──
+        const statsY = 62;
+        const statW = (pageW - margin * 2) / 3;
+        const statBoxes = [
+            { label: "Jami darslar", value: String(attendance.length), color: [241, 245, 249], textColor: [37, 99, 235] },
+            { label: "Kelgan", value: String(presentCount), color: [240, 253, 244], textColor: [22, 163, 74] },
+            { label: "Kelmagan", value: String(absentCount), color: [255, 241, 242], textColor: [220, 38, 38] },
+        ];
+        statBoxes.forEach((s, i) => {
+            const x = margin + i * statW;
+            doc.setFillColor(...s.color);
+            doc.roundedRect(x, statsY, statW - 3, 22, 3, 3, 'F');
+            doc.setTextColor(...s.textColor);
+            doc.setFontSize(16);
+            doc.setFont('helvetica', 'bold');
+            doc.text(s.value, x + statW / 2 - 1.5, statsY + 12, { align: 'center' });
+            doc.setFontSize(7.5);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(100, 116, 139);
+            doc.text(s.label, x + statW / 2 - 1.5, statsY + 18, { align: 'center' });
+        });
+
+        // Attendance % badge
+        const pctColor = attendancePercentage >= 80 ? [22, 163, 74] : attendancePercentage >= 50 ? [217, 119, 6] : [220, 38, 38];
+        doc.setFillColor(...pctColor);
+        doc.roundedRect(pageW - margin - 28, statsY, 28, 22, 3, 3, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`${attendancePercentage}%`, pageW - margin - 14, statsY + 12, { align: 'center' });
+        doc.setFontSize(7.5);
+        doc.setFont('helvetica', 'normal');
+        doc.text('Davomat', pageW - margin - 14, statsY + 18, { align: 'center' });
+
+        // ── Section title ──
+        doc.setTextColor(15, 23, 42);
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'bold');
+        doc.text("Davomat Tarixi", margin, statsY + 32);
+
+        // Small divider
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.3);
+        doc.line(margin, statsY + 34, pageW - margin, statsY + 34);
+
+        // ── Table ──
+        const tableData = attendance.map((rec, idx) => [
+            idx + 1,
+            formatDate(rec.date),
+            rec.status === 'present' ? 'Keldi' : 'Kelmadi',
+            rec.status === 'absent' ? (rec.sms_sent ? 'Yuborildi' : 'Yuborilmadi') : '—',
+        ]);
+
+        autoTable(doc, {
+            startY: statsY + 37,
+            head: [['№', 'Sana', 'Holat', 'SMS']],
+            body: tableData,
+            margin: { left: margin, right: margin },
+            styles: {
+                fontSize: 9,
+                cellPadding: { top: 4, bottom: 4, left: 5, right: 5 },
+                lineColor: [226, 232, 240],
+                lineWidth: 0.2,
+            },
+            headStyles: {
+                fillColor: [37, 99, 235],
+                textColor: 255,
+                fontStyle: 'bold',
+                fontSize: 9,
+                halign: 'left',
+            },
+            alternateRowStyles: { fillColor: [248, 250, 252] },
+            columnStyles: {
+                0: { cellWidth: 12, halign: 'center', textColor: [148, 163, 184] },
+                1: { cellWidth: 35, fontStyle: 'bold' },
+                2: {
+                    cellWidth: 30,
+                    fontStyle: 'bold',
+                },
+                3: { cellWidth: 30, textColor: [100, 116, 139] },
+            },
+            didParseCell: (data) => {
+                if (data.section === 'body' && data.column.index === 2) {
+                    const val = data.cell.raw;
+                    data.cell.styles.textColor = val === 'Keldi' ? [22, 163, 74] : [220, 38, 38];
+                }
+                if (data.section === 'body' && data.column.index === 3) {
+                    const val = data.cell.raw;
+                    if (val === 'Yuborildi') data.cell.styles.textColor = [37, 99, 235];
+                    else if (val === 'Yuborilmadi') data.cell.styles.textColor = [239, 68, 68];
+                }
+            },
+        });
+
+        // ── Footer on every page ──
+        const totalPages = doc.internal.getNumberOfPages();
+        for (let i = 1; i <= totalPages; i++) {
+            doc.setPage(i);
+            doc.setDrawColor(226, 232, 240);
+            doc.setLineWidth(0.3);
+            doc.line(margin, pageH - 12, pageW - margin, pageH - 12);
+            doc.setFontSize(7.5);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(148, 163, 184);
+            doc.text(
+                `Chop etilgan: ${new Date().toLocaleDateString('ru-RU')}   |   ${name}`,
+                margin, pageH - 7
+            );
+            doc.text(`${i} / ${totalPages}`, pageW - margin, pageH - 7, { align: 'right' });
+        }
+
+        const safeName = (student?.full_name ?? 'hisobot').replace(/\s+/g, '_');
+        doc.save(`${safeName}_davomat.pdf`);
+        toast.success('PDF yuklab olindi');
+    };
 
     return (
         <div className="space-y-6 sm:space-y-8 pb-12">
@@ -217,7 +372,14 @@ const StudentDetailPage = () => {
                 <div className="lg:col-span-2 space-y-6">
                     <div className="flex items-center justify-between">
                         <h3 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">Davomat Tarixi</h3>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 items-center">
+                            <button
+                                onClick={generatePDF}
+                                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary/10 text-primary hover:bg-primary hover:text-white text-sm font-semibold transition-all"
+                            >
+                                <FiPrinter className="w-3.5 h-3.5" />
+                                PDF yuklab olish
+                            </button>
                             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-50 dark:bg-green-950 text-green-600 dark:text-green-400 text-xs font-bold">
                                 {presentCount} Kelgan
                             </span>

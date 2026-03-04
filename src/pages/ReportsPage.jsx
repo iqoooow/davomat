@@ -153,43 +153,47 @@ const ReportsPage = () => {
 
                 {/* Filters */}
                 <div className="no-print grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider ml-1">Guruh</label>
-                        <select
-                            value={selectedGroup}
-                            onChange={e => setSelectedGroup(e.target.value)}
-                            className="w-full px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 text-sm font-medium focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
-                        >
-                            <option value="">Guruh tanlang...</option>
-                            {groups.map(g => (
-                                <option key={g.id} value={g.id}>{g.name}</option>
-                            ))}
-                        </select>
-                    </div>
-                    <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider ml-1">Oy</label>
-                        <select
-                            value={selectedMonth}
-                            onChange={e => setSelectedMonth(Number(e.target.value))}
-                            className="w-full px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 text-sm font-medium focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
-                        >
-                            {MONTHS_UZ.map((m, i) => (
-                                <option key={i} value={i}>{m}</option>
-                            ))}
-                        </select>
-                    </div>
-                    <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider ml-1">Yil</label>
-                        <select
-                            value={selectedYear}
-                            onChange={e => setSelectedYear(Number(e.target.value))}
-                            className="w-full px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 text-sm font-medium focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
-                        >
-                            {availableYears.map(y => (
-                                <option key={y} value={y}>{y}</option>
-                            ))}
-                        </select>
-                    </div>
+                    {[
+                        {
+                            label: 'Guruh',
+                            value: selectedGroup,
+                            onChange: e => setSelectedGroup(e.target.value),
+                            options: [
+                                <option key="" value="">Guruh tanlang...</option>,
+                                ...groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)
+                            ]
+                        },
+                        {
+                            label: 'Oy',
+                            value: selectedMonth,
+                            onChange: e => setSelectedMonth(Number(e.target.value)),
+                            options: MONTHS_UZ.map((m, i) => <option key={i} value={i}>{m}</option>)
+                        },
+                        {
+                            label: 'Yil',
+                            value: selectedYear,
+                            onChange: e => setSelectedYear(Number(e.target.value)),
+                            options: availableYears.map(y => <option key={y} value={y}>{y}</option>)
+                        }
+                    ].map(({ label, value, onChange, options }) => (
+                        <div key={label} className="space-y-1.5">
+                            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider ml-1">{label}</label>
+                            <div className="relative">
+                                <select
+                                    value={value}
+                                    onChange={onChange}
+                                    className="w-full appearance-none pl-4 pr-10 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 text-sm font-medium focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
+                                >
+                                    {options}
+                                </select>
+                                <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                                    <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
                 </div>
 
                 {/* Empty state */}
