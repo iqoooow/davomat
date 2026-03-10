@@ -115,8 +115,10 @@ const AttendancePage = () => {
             }));
             await saveAttendance(records);
 
-            // Check absent students
-            const absents = await getAbsentWithoutSms(today);
+            // Check absent students — only from today's scheduled groups
+            const todayStudentIds = new Set(todayStudents.map(s => s.id));
+            const allAbsents = await getAbsentWithoutSms(today);
+            const absents = allAbsents.filter(a => todayStudentIds.has(a.student_id));
             if (absents.length > 0) {
                 setAbsentList(absents);
                 setSmsModalOpen(true);
