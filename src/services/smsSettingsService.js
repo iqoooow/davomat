@@ -11,6 +11,32 @@ export const getTemplates = async () => {
     return data;
 };
 
+export const getApprovedTemplates = async () => {
+    const { data, error } = await supabase
+        .from('sms_templates')
+        .select('*')
+        .eq('status', 'approved')
+        .order('created_at', { ascending: true });
+    if (error) throw error;
+    return data;
+};
+
+export const approveTemplate = async (id) => {
+    const { error } = await supabase
+        .from('sms_templates')
+        .update({ status: 'approved' })
+        .eq('id', id);
+    if (error) throw error;
+};
+
+export const rejectTemplate = async (id) => {
+    const { error } = await supabase
+        .from('sms_templates')
+        .update({ status: 'rejected' })
+        .eq('id', id);
+    if (error) throw error;
+};
+
 export const addTemplate = async (template) => {
     const { data, error } = await supabase
         .from('sms_templates')

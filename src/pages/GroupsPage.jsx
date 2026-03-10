@@ -109,7 +109,7 @@ const GroupsPage = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                     <AnimatePresence>
                         {groups.map((group, idx) => {
-                            const studentCount = group.students?.[0]?.count ?? 0;
+                            const studentCount = group.student_groups?.[0]?.count ?? 0;
                             return (
                                 <motion.div
                                     key={group.id}

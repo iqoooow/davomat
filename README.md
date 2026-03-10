@@ -52,3 +52,4 @@ npm run dev
 4. Davomat sahifasida kundalik holatni belgilang va saqlang.
 5. "SMS yuborish" tugmasini bosing.
 # davomat
+# davomat

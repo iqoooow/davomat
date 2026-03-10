@@ -1,32 +1,26 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getStudents, addStudent, deleteStudent, uploadAvatar } from '../services/studentsService';
-import { getGroups } from '../services/groupsService';
-import { FiPlus, FiTrash2, FiUser, FiX, FiSearch, FiPhone, FiGrid, FiCamera, FiLoader, FiChevronDown } from 'react-icons/fi';
+import { FiPlus, FiTrash2, FiUser, FiX, FiSearch, FiPhone, FiGrid, FiCamera, FiLoader } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const StudentsPage = () => {
     const [students, setStudents] = useState([]);
-    const [groups, setGroups] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [uploading, setUploading] = useState(false);
-    const [formData, setFormData] = useState({ full_name: '', parent_phone: '', group_id: '', avatar_url: '' });
+    const [formData, setFormData] = useState({ full_name: '', parent_phone: '', avatar_url: '' });
     const fileInputRef = useRef(null);
     const navigate = useNavigate();
 
-    useEffect(() => {
-        fetchData();
-    }, []);
+    useEffect(() => { fetchData(); }, []);
 
     const fetchData = async () => {
         try {
-            const [studentsData, groupsData] = await Promise.all([getStudents(), getGroups()]);
-            setStudents(studentsData);
-            setGroups(groupsData);
-        } catch (error) {
+            setStudents(await getStudents());
+        } catch {
             toast.error(`Ma'lumotlarni yuklashda xatolik`);
         } finally {
             setLoading(false);
@@ -51,18 +45,12 @@ const StudentsPage = () => {
     const handleAddStudent = async (e) => {
         e.preventDefault();
         try {
-            const payload = {
-                full_name: formData.full_name,
-                parent_phone: formData.parent_phone,
-                group_id: formData.group_id || null,
-                avatar_url: formData.avatar_url || null,
-            };
-            await addStudent(payload);
-            toast.success('Talaba muvaffaqiyatli qo\'shildi');
+            await addStudent(formData);
+            toast.success("Talaba qo'shildi");
             setIsModalOpen(false);
-            setFormData({ full_name: '', parent_phone: '', group_id: '', avatar_url: '' });
+            setFormData({ full_name: '', parent_phone: '', avatar_url: '' });
             fetchData();
-        } catch (error) {
+        } catch {
             toast.error(`Xatolik yuz berdi`);
         }
     };
@@ -82,7 +70,7 @@ const StudentsPage = () => {
 
     const filteredStudents = students.filter(s =>
         s.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.groups?.name?.toLowerCase().includes(searchTerm.toLowerCase())
+        s.student_groups?.some(sg => sg.groups?.name?.toLowerCase().includes(searchTerm.toLowerCase()))
     );
 
     return (
@@ -162,9 +150,15 @@ const StudentsPage = () => {
                                             </div>
                                         </td>
                                         <td className="px-6 sm:px-8 py-4 sm:py-5">
-                                            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-sm font-semibold border border-slate-200/50 dark:border-slate-700/50">
-                                                <FiGrid className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                                                <span className="truncate max-w-[100px] sm:max-w-none">{student.groups?.name || 'Guruhsiz'}</span>
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {student.student_groups?.length > 0 ? student.student_groups.map(sg => (
+                                                    <span key={sg.group_id} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary/10 text-primary text-xs font-semibold">
+                                                        <FiGrid className="w-3 h-3 flex-shrink-0" />
+                                                        {sg.groups?.name}
+                                                    </span>
+                                                )) : (
+                                                    <span className="text-xs text-slate-400 font-medium">Guruhsiz</span>
+                                                )}
                                             </div>
                                         </td>
                                         <td className="px-6 sm:px-8 py-4 sm:py-5 hidden sm:table-cell">
@@ -254,27 +248,6 @@ const StudentsPage = () => {
                                         value={formData.full_name}
                                         onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
                                     />
-                                </div>
-
-                                <div className="space-y-2">
-                                    <label className="text-sm font-bold text-slate-700 dark:text-slate-300 ml-1">Guruh *</label>
-                                    <div className="relative">
-                                        <select
-                                            required
-                                            className="w-full px-5 py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:ring-4 focus:ring-primary/10 focus:border-primary focus:outline-none transition-all text-slate-900 dark:text-white appearance-none cursor-pointer"
-                                            value={formData.group_id}
-                                            onChange={(e) => setFormData({ ...formData, group_id: e.target.value })}
-                                        >
-                                            <option value="">— Guruhni tanlang —</option>
-                                            {groups.map(g => (
-                                                <option key={g.id} value={g.id}>{g.name}</option>
-                                            ))}
-                                        </select>
-                                        <FiChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                                    </div>
-                                    {groups.length === 0 && (
-                                        <p className="text-xs text-amber-500 ml-1">Avval guruh qo'shing (Guruhlar sahifasidan)</p>
-                                    )}
                                 </div>
 
                                 <div className="space-y-2">

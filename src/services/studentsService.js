@@ -17,17 +17,11 @@ export const uploadAvatar = async (file) => {
     return data.publicUrl;
 };
 
-export const getStudents = async (groupId = null) => {
-    let query = supabase
+export const getStudents = async () => {
+    const { data, error } = await supabase
         .from('students')
-        .select('*, groups(id, name)')
+        .select('*, student_groups(group_id, groups(id, name))')
         .order('full_name', { ascending: true });
-
-    if (groupId) {
-        query = query.eq('group_id', groupId);
-    }
-
-    const { data, error } = await query;
     if (error) throw error;
     return data;
 };
@@ -35,9 +29,12 @@ export const getStudents = async (groupId = null) => {
 export const addStudent = async (student) => {
     const { data, error } = await supabase
         .from('students')
-        .insert([student])
-        .select('*, groups(id, name)');
-
+        .insert([{
+            full_name:    student.full_name,
+            parent_phone: student.parent_phone,
+            avatar_url:   student.avatar_url || null,
+        }])
+        .select('*, student_groups(group_id, groups(id, name))');
     if (error) throw error;
     return data[0];
 };
@@ -47,6 +44,5 @@ export const deleteStudent = async (id) => {
         .from('students')
         .delete()
         .eq('id', id);
-
     if (error) throw error;
 };

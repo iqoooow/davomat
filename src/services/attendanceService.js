@@ -13,7 +13,7 @@ export const getAttendanceByDate = async (date) => {
 export const saveAttendance = async (records) => {
     const { data, error } = await supabase
         .from('attendance')
-        .upsert(records, { onConflict: 'student_id, date' })
+        .upsert(records, { onConflict: 'student_id,date' })
         .select();
 
     if (error) throw error;
