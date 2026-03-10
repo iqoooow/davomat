@@ -104,10 +104,25 @@ const AttendancePage = () => {
     const handleConfirm = async () => {
         setConfirming(true);
         try {
-            // Only save attendance for students in today's scheduled groups
+            // Students in today's scheduled groups
             const todayStudents = students.filter(s =>
                 s.student_groups?.some(sg => todayGroupIds.has(sg.group_id))
             );
+            const todayStudentIds = new Set(todayStudents.map(s => s.id));
+
+            // Delete today's attendance records for students NOT in today's groups
+            const nonTodayIds = students
+                .filter(s => !todayStudentIds.has(s.id))
+                .map(s => s.id);
+            if (nonTodayIds.length > 0) {
+                await supabase
+                    .from('attendance')
+                    .delete()
+                    .eq('date', today)
+                    .in('student_id', nonTodayIds);
+            }
+
+            // Save attendance only for today's group students
             const records = todayStudents.map(s => ({
                 student_id: s.id,
                 date: today,
@@ -116,7 +131,6 @@ const AttendancePage = () => {
             await saveAttendance(records);
 
             // Check absent students — only from today's scheduled groups
-            const todayStudentIds = new Set(todayStudents.map(s => s.id));
             const allAbsents = await getAbsentWithoutSms(today);
             const absents = allAbsents.filter(a => todayStudentIds.has(a.student_id));
             if (absents.length > 0) {
