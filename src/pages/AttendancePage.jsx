@@ -137,7 +137,10 @@ const AttendancePage = () => {
     const handleSendSms = async () => {
         setSendingSms(true);
         try {
-            const body = { date: today };
+            const body = {
+                date: today,
+                student_ids: absentList.map(a => a.student_id),
+            };
             if (selectedTemplateId) body.template_id = selectedTemplateId;
             const { error } = await supabase.functions.invoke('sms-sender', { body });
             if (error) throw error;

@@ -40,7 +40,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json()
-    const { date, template_id, test_phone, test_message } = body
+    const { date, template_id, test_phone, test_message, student_ids } = body
 
     const smsToken = Deno.env.get('DEVSMS_TOKEN')!
     const smsFrom  = Deno.env.get('DEVSMS_FROM') || '4546'
@@ -74,13 +74,17 @@ serve(async (req) => {
       if (tpl?.body) templateBody = tpl.body
     }
 
-    // 2. Get absent students without SMS
-    const { data: absentList, error: fetchErr } = await supabase
+    // 2. Get absent students without SMS (filter by student_ids if provided)
+    let absentsQuery = supabase
       .from('attendance')
       .select('id, student_id, students(full_name, parent_phone)')
       .eq('date', date)
       .eq('status', 'absent')
       .eq('sms_sent', false)
+    if (student_ids && student_ids.length > 0) {
+      absentsQuery = absentsQuery.in('student_id', student_ids)
+    }
+    const { data: absentList, error: fetchErr } = await absentsQuery
 
     if (fetchErr) throw fetchErr
     if (!absentList || absentList.length === 0) {

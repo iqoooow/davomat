@@ -55,7 +55,7 @@ serve(async (req: Request) => {
 
     try {
         const body = await req.json();
-        const { date, template_id, specific_id, phone, message } = body;
+        const { date, template_id, specific_id, phone, message, student_ids } = body;
         const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
         // Load settings from DB (fallback to env)
@@ -138,11 +138,15 @@ serve(async (req: Request) => {
             if (tpls?.[0]?.body) templateBody = tpls[0].body;
         }
 
-        // Get absent students
-        const { data: absents, error: fetchError } = await supabase
+        // Get absent students (filter by student_ids if provided)
+        let absentsQuery = supabase
             .from('attendance')
             .select('id, student_id, students(full_name, parent_phone, groups(name))')
             .eq('date', date).eq('status', 'absent').eq('sms_sent', false);
+        if (student_ids && student_ids.length > 0) {
+            absentsQuery = absentsQuery.in('student_id', student_ids);
+        }
+        const { data: absents, error: fetchError } = await absentsQuery;
 
         if (fetchError) throw fetchError;
         if (!absents || absents.length === 0) {
