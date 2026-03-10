@@ -104,8 +104,11 @@ const AttendancePage = () => {
     const handleConfirm = async () => {
         setConfirming(true);
         try {
-            // Save all current attendance to DB first
-            const records = students.map(s => ({
+            // Only save attendance for students in today's scheduled groups
+            const todayStudents = students.filter(s =>
+                s.student_groups?.some(sg => todayGroupIds.has(sg.group_id))
+            );
+            const records = todayStudents.map(s => ({
                 student_id: s.id,
                 date: today,
                 status: attendanceMap[s.id]?.status ?? 'absent',
