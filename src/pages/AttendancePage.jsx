@@ -155,30 +155,38 @@ const AttendancePage = () => {
         toast.success("Davomat tasdiqlandi (SMS yuborilmadi)");
     };
 
+    // Helper: check if a group has class today (and time hasn't passed)
+    const getGroupScheduleStatus = (g) => {
+        if (!g) return 'ok';
+        const days = g.schedule_days;
+        const hasSchedule = days?.length > 0 || g.schedule_start;
+        if (!hasSchedule) return 'ok';
+        if (days?.length > 0 && !days.includes(now.getDay())) return 'wrong_day';
+        if (g.schedule_end) {
+            const [endH, endM] = String(g.schedule_end).split(':').map(Number);
+            const endMins = endH * 60 + endM;
+            if (now.getHours() * 60 + now.getMinutes() > endMins) return 'time_over';
+        }
+        return 'ok';
+    };
+
+    // Groups that have class today (not blocked by schedule)
+    const todayGroupIds = new Set(
+        groups.filter(g => getGroupScheduleStatus(g) === 'ok').map(g => g.id)
+    );
+
+    // Schedule-based access control for the selected group
+    const activeGroup = activeGroupId === 'all' ? null : groups.find(g => g.id === activeGroupId);
+    const scheduleStatus = activeGroupId === 'all' ? 'ok' : getGroupScheduleStatus(activeGroup);
+    const scheduleBlocked = scheduleStatus !== 'ok';
+
     const visibleStudents = (activeGroupId === 'all'
-        ? students
+        ? students.filter(s => s.student_groups?.some(sg => todayGroupIds.has(sg.group_id)))
         : students.filter(s => s.student_groups?.some(sg => sg.group_id === activeGroupId))
     ).filter(s => s.full_name.toLowerCase().includes(searchTerm.toLowerCase()));
 
     const presentCount = visibleStudents.filter(s => attendanceMap[s.id]?.status === 'present').length;
     const absentCount  = visibleStudents.filter(s => attendanceMap[s.id]?.status === 'absent').length;
-
-    // Schedule-based access control for the selected group
-    const activeGroup = activeGroupId === 'all' ? null : groups.find(g => g.id === activeGroupId);
-    const scheduleStatus = (() => {
-        if (!activeGroup) return 'ok';
-        const days = activeGroup.schedule_days;
-        const hasSchedule = days?.length > 0 || activeGroup.schedule_start;
-        if (!hasSchedule) return 'ok';
-        if (days?.length > 0 && !days.includes(now.getDay())) return 'wrong_day';
-        if (activeGroup.schedule_end) {
-            const [endH, endM] = String(activeGroup.schedule_end).split(':').map(Number);
-            const endMins = endH * 60 + endM;
-            if (now.getHours() * 60 + now.getMinutes() > endMins) return 'time_over';
-        }
-        return 'ok';
-    })();
-    const scheduleBlocked = scheduleStatus !== 'ok';
 
     const WEEK_DAYS = ['Yakshanba', 'Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma', 'Shanba'];
 
@@ -212,20 +220,30 @@ const AttendancePage = () => {
                             : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
                         }`}
                     >
-                        Barchasi ({students.length})
+                        Bugungi ({students.filter(s => s.student_groups?.some(sg => todayGroupIds.has(sg.group_id))).length})
                     </button>
-                    {groups.map(g => (
-                        <button
-                            key={g.id}
-                            onClick={() => setActiveGroupId(g.id)}
-                            className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${activeGroupId === g.id
-                                ? 'bg-primary text-white shadow-sm'
-                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                            }`}
-                        >
-                            {g.name} ({students.filter(s => s.student_groups?.some(sg => sg.group_id === g.id)).length})
-                        </button>
-                    ))}
+                    {groups.map(g => {
+                        const isToday = todayGroupIds.has(g.id);
+                        const groupStatus = getGroupScheduleStatus(g);
+                        return (
+                            <button
+                                key={g.id}
+                                onClick={() => isToday && setActiveGroupId(g.id)}
+                                title={!isToday ? (groupStatus === 'wrong_day' ? 'Bu guruh bugun dars qilmaydi' : 'Davomat vaqti tugadi') : undefined}
+                                className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${activeGroupId === g.id
+                                    ? isToday
+                                        ? 'bg-primary text-white shadow-sm'
+                                        : 'bg-slate-400 text-white shadow-sm'
+                                    : isToday
+                                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600 opacity-50 cursor-not-allowed'
+                                }`}
+                            >
+                                {g.name} ({students.filter(s => s.student_groups?.some(sg => sg.group_id === g.id)).length})
+                                {!isToday && <span className="ml-1 text-[10px]">🔒</span>}
+                            </button>
+                        );
+                    })}
                 </div>
             )}
 
