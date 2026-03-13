@@ -40,7 +40,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json()
-    const { date, template_id, test_phone, test_message, student_ids } = body
+    const { date, template_id, test_phone, test_message, student_ids, group_id } = body
 
     const smsToken = Deno.env.get('DEVSMS_TOKEN')!
     const smsFrom  = Deno.env.get('DEVSMS_FROM') || '4546'
@@ -64,7 +64,7 @@ serve(async (req) => {
     const supabase    = createClient(supabaseUrl, serviceKey)
 
     // 1. Get template
-    let templateBody = 'Hurmatli ota-ona, farzandingiz {student_name} bugun darsga kelmadi.'
+    let templateBody = 'Hurmatli ota-ona, farzandingiz {ism} bugun ({sana}) darsga kelmadi.'
     if (template_id) {
       const { data: tpl } = await supabase
         .from('sms_templates')
@@ -74,19 +74,32 @@ serve(async (req) => {
       if (tpl?.body) templateBody = tpl.body
     }
 
-    // 2. Get absent students without SMS (filter by student_ids if provided)
+    // 2. Get group name
+    let groupName = ''
+    if (group_id) {
+      const { data: grp } = await supabase
+        .from('groups')
+        .select('name')
+        .eq('id', group_id)
+        .single()
+      if (grp?.name) groupName = grp.name
+    }
+
+    // 3. Get absent students without SMS
     let absentsQuery = supabase
       .from('attendance')
       .select('id, student_id, students(full_name, parent_phone)')
       .eq('date', date)
       .eq('status', 'absent')
       .eq('sms_sent', false)
+
     if (student_ids && student_ids.length > 0) {
       absentsQuery = absentsQuery.in('student_id', student_ids)
     }
-    const { data: absentList, error: fetchErr } = await absentsQuery
 
+    const { data: absentList, error: fetchErr } = await absentsQuery
     if (fetchErr) throw fetchErr
+
     if (!absentList || absentList.length === 0) {
       return new Response(
         JSON.stringify({ success: true, sent: 0, message: 'No pending SMS' }),
@@ -94,7 +107,30 @@ serve(async (req) => {
       )
     }
 
-    // 3. Send SMS to each absent student
+    // 4. Get monthly absent counts for all students
+    const currentMonth = date.slice(0, 7) // "2026-03"
+    const monthStart = `${currentMonth}-01`
+    const monthEnd = `${currentMonth}-31`
+    const studentIdList = absentList.map((a: any) => a.student_id)
+
+    const { data: monthlyAbsents } = await supabase
+      .from('attendance')
+      .select('student_id')
+      .in('student_id', studentIdList)
+      .eq('status', 'absent')
+      .gte('date', monthStart)
+      .lte('date', monthEnd)
+
+    const monthlyCountMap: Record<string, number> = {}
+    ;(monthlyAbsents || []).forEach((row: any) => {
+      monthlyCountMap[row.student_id] = (monthlyCountMap[row.student_id] || 0) + 1
+    })
+
+    // 5. Format date: "2026-03-13" → "13.03.2026"
+    const [y, m, d] = date.split('-')
+    const formattedDate = `${d}.${m}.${y}`
+
+    // 6. Send SMS to each absent student
     let sent = 0
     let failed = 0
 
@@ -102,19 +138,19 @@ serve(async (req) => {
       const student = rec.students as { full_name: string; parent_phone: string } | null
       const phone   = student?.parent_phone
       const name    = student?.full_name || 'Talaba'
+      const oyYoq   = String(monthlyCountMap[rec.student_id] || 1)
 
       if (!phone) {
         failed++
         continue
       }
 
-      const formattedDate = new Date(date).toLocaleDateString('uz-UZ', {
-        day: '2-digit', month: '2-digit', year: 'numeric',
-      })
-
+      // Replace all supported variables
       const message = templateBody
-        .replace('{student_name}', name)
-        .replace('{date}', formattedDate)
+        .replace(/\{ism\}/g, name)
+        .replace(/\{guruh\}/g, groupName)
+        .replace(/\{sana\}/g, formattedDate)
+        .replace(/\{oy_yoq\}/g, oyYoq)
 
       let status: 'sent' | 'failed' = 'sent'
       let errorMsg: string | null = null
@@ -128,7 +164,6 @@ serve(async (req) => {
         errorMsg = (e as Error).message
       }
 
-      // Update attendance.sms_sent
       if (status === 'sent') {
         await supabase
           .from('attendance')
@@ -136,7 +171,6 @@ serve(async (req) => {
           .eq('id', rec.id)
       }
 
-      // Log to sms_history
       await supabase.from('sms_history').insert({
         student_id: rec.student_id,
         phone,

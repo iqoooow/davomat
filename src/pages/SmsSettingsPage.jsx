@@ -14,17 +14,17 @@ import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const VARIABLES = [
-    { key: '{ism}',       label: 'Ism',       desc: "O'quvchi to'liq ismi",   sample: 'Alisher Karimov' },
-    { key: '{guruh}',     label: 'Guruh',      desc: "O'quvchi guruhi",        sample: 'IELTS 1' },
-    { key: '{sana}',      label: 'Sana',       desc: 'Bugungi sana',           sample: '04.03.2026' },
-    { key: '{bugun_yoq}', label: "Bugun yo'q", desc: 'Bugun kelmagan darslar', sample: '1' },
-    { key: '{oy_yoq}',    label: "Oyda yo'q",  desc: 'Shu oyda kelmagan kunlar', sample: '5' },
-    { key: '{jami_yoq}',  label: "Jami yo'q",  desc: 'Umuman kelmagan kunlar', sample: '12' },
+    { key: '{ism}',     label: 'Ism',        desc: "O'quvchining to'liq ismi",      sample: 'Alisher Karimov' },
+    { key: '{guruh}',   label: 'Guruh',      desc: "O'quvchi qatnashgan guruh nomi", sample: 'IELTS 1'         },
+    { key: '{sana}',    label: 'Sana',       desc: 'Davomat olingan kun',            sample: '13.03.2026'      },
+    { key: '{oy_yoq}',  label: "Oyda yo'q",  desc: 'Shu oyda kelmagan kunlar soni',  sample: '5'               },
 ];
 
 const SAMPLE_DATA = {
-    '{ism}': 'Alisher Karimov', '{guruh}': 'IELTS 1', '{sana}': '04.03.2026',
-    '{bugun_yoq}': '1', '{oy_yoq}': '5', '{jami_yoq}': '12',
+    '{ism}': 'Alisher Karimov',
+    '{guruh}': 'IELTS 1',
+    '{sana}': '13.03.2026',
+    '{oy_yoq}': '5',
 };
 
 const TYPE_LABELS = {

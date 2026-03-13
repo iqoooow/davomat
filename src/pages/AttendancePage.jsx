@@ -168,6 +168,7 @@ const AttendancePage = () => {
             const body = {
                 date: today,
                 student_ids: absentList.map(a => a.student_id),
+                group_id: selectedGroupId,
             };
             if (selectedTemplateId) body.template_id = selectedTemplateId;
             const { error } = await supabase.functions.invoke('sms-sender', { body });
