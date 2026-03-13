@@ -198,9 +198,7 @@ const AttendancePage = () => {
                 {/* Header */}
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Davomat</h1>
-                    <p className="text-sm text-slate-400 mt-0.5">
-                        {todayLabel} · <span className="font-semibold text-primary">{currentTime}</span>
-                    </p>
+                    <p className="text-sm text-slate-400 mt-0.5">{todayLabel}</p>
                 </div>
 
                 {loading ? (
@@ -325,9 +323,7 @@ const AttendancePage = () => {
                 </button>
                 <div className="flex-1 min-w-0">
                     <h1 className="text-xl font-bold text-slate-900 dark:text-white truncate">{selectedGroup?.name}</h1>
-                    <p className="text-sm text-slate-400 mt-0.5">
-                        {todayLabel} · <span className="font-semibold text-primary">{currentTime}</span>
-                    </p>
+                    <p className="text-sm text-slate-400 mt-0.5">{todayLabel}</p>
                 </div>
                 {groupLocked && (
                     <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 flex-shrink-0">
