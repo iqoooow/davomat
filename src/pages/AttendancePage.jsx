@@ -4,20 +4,21 @@ import { getGroups } from '../services/groupsService';
 import { getAttendanceByDate, saveAttendance, getAbsentWithoutSms } from '../services/attendanceService';
 import { getApprovedTemplates } from '../services/smsSettingsService';
 import { supabase } from '../services/supabaseClient';
-import { FiSend, FiSearch, FiX, FiMessageSquare, FiLoader, FiCheckCircle, FiLock, FiCalendar, FiClock } from 'react-icons/fi';
+import { FiSend, FiSearch, FiLock, FiCalendar, FiClock, FiLoader, FiCheckCircle, FiArrowLeft, FiUsers } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import { AnimatePresence, motion } from 'framer-motion';
 
-const LOCK_KEY = (date) => `davomat_locked_${date}`;
-const isLockedDay = (date) => localStorage.getItem(LOCK_KEY(date)) === 'true';
-const lockDay = (date) => localStorage.setItem(LOCK_KEY(date), 'true');
+const GROUP_LOCK_KEY = (date, groupId) => `davomat_locked_${date}_${groupId}`;
+const isGroupLocked = (date, groupId) => localStorage.getItem(GROUP_LOCK_KEY(date, groupId)) === 'true';
+const lockGroup = (date, groupId) => localStorage.setItem(GROUP_LOCK_KEY(date, groupId), 'true');
 
 const AttendancePage = () => {
     const [students, setStudents] = useState([]);
     const [groups, setGroups] = useState([]);
     const [attendanceMap, setAttendanceMap] = useState({});
     const [searchTerm, setSearchTerm] = useState('');
-    const [activeGroupId, setActiveGroupId] = useState('all');
+    const [selectedGroupId, setSelectedGroupId] = useState(null); // null = cards screen
+    const [lockedGroups, setLockedGroups] = useState(new Set());
     const [loading, setLoading] = useState(true);
     const [savingId, setSavingId] = useState(null);
     const [confirming, setConfirming] = useState(false);
@@ -26,7 +27,6 @@ const AttendancePage = () => {
     const [templates, setTemplates] = useState([]);
     const [selectedTemplateId, setSelectedTemplateId] = useState('');
     const [absentList, setAbsentList] = useState([]);
-    const [dayLocked, setDayLocked] = useState(false);
 
     const today = new Date().toISOString().split('T')[0];
 
@@ -38,7 +38,8 @@ const AttendancePage = () => {
             const currentDate = current.toISOString().split('T')[0];
             if (currentDate !== lastDate) {
                 lastDate = currentDate;
-                setDayLocked(false);
+                setLockedGroups(new Set());
+                setSelectedGroupId(null);
                 fetchData();
             }
             setNow(current);
@@ -74,7 +75,12 @@ const AttendancePage = () => {
                 map[s.id] = { status: rec?.status ?? 'absent', sms_sent: rec?.sms_sent ?? false };
             });
             setAttendanceMap(map);
-            setDayLocked(isLockedDay(today));
+
+            // Load locked groups from localStorage
+            const locked = new Set(
+                allGroups.filter(g => isGroupLocked(today, g.id)).map(g => g.id)
+            );
+            setLockedGroups(locked);
         } catch {
             toast.error("Ma'lumotlarni yuklashda xatolik");
         } finally {
@@ -82,8 +88,27 @@ const AttendancePage = () => {
         }
     };
 
+    // Helper: check if a group has class today (and time hasn't passed)
+    const getGroupScheduleStatus = (g) => {
+        if (!g) return 'ok';
+        const days = g.schedule_days;
+        const hasSchedule = days?.length > 0 || g.schedule_start;
+        if (!hasSchedule) return 'ok';
+        if (days?.length > 0 && !days.includes(now.getDay())) return 'wrong_day';
+        if (g.schedule_end) {
+            const [endH, endM] = String(g.schedule_end).split(':').map(Number);
+            const endMins = endH * 60 + endM;
+            if (now.getHours() * 60 + now.getMinutes() > endMins) return 'time_over';
+        }
+        return 'ok';
+    };
+
+    // Only today's groups (have class today)
+    const todayGroups = groups.filter(g => getGroupScheduleStatus(g) === 'ok');
+
     const handleToggle = async (studentId) => {
-        if (dayLocked) return;
+        const groupLocked = lockedGroups.has(selectedGroupId);
+        if (groupLocked) return;
         const prev = attendanceMap[studentId];
         const nextStatus = prev?.status === 'present' ? 'absent' : 'present';
         setAttendanceMap(m => ({
@@ -102,43 +127,32 @@ const AttendancePage = () => {
     };
 
     const handleConfirm = async () => {
+        if (!selectedGroupId) return;
         setConfirming(true);
         try {
-            // Students in today's scheduled groups
-            const todayStudents = students.filter(s =>
-                s.student_groups?.some(sg => todayGroupIds.has(sg.group_id))
+            // Only this group's students
+            const groupStudents = students.filter(s =>
+                s.student_groups?.some(sg => sg.group_id === selectedGroupId)
             );
-            const todayStudentIds = new Set(todayStudents.map(s => s.id));
+            const groupStudentIds = new Set(groupStudents.map(s => s.id));
 
-            // Delete today's attendance records for students NOT in today's groups
-            const nonTodayIds = students
-                .filter(s => !todayStudentIds.has(s.id))
-                .map(s => s.id);
-            if (nonTodayIds.length > 0) {
-                await supabase
-                    .from('attendance')
-                    .delete()
-                    .eq('date', today)
-                    .in('student_id', nonTodayIds);
-            }
-
-            // Save attendance only for today's group students
-            const records = todayStudents.map(s => ({
+            const records = groupStudents.map(s => ({
                 student_id: s.id,
                 date: today,
                 status: attendanceMap[s.id]?.status ?? 'absent',
             }));
             await saveAttendance(records);
 
-            // Check absent students — only from today's scheduled groups
+            // Check absent students for this group only
             const allAbsents = await getAbsentWithoutSms(today);
-            const absents = allAbsents.filter(a => todayStudentIds.has(a.student_id));
+            const absents = allAbsents.filter(a => groupStudentIds.has(a.student_id));
+
             if (absents.length > 0) {
                 setAbsentList(absents);
                 setSmsModalOpen(true);
             } else {
-                lockDay(today);
-                setDayLocked(true);
+                lockGroup(today, selectedGroupId);
+                setLockedGroups(prev => new Set([...prev, selectedGroupId]));
                 toast.success("Davomat tasdiqlandi");
             }
         } catch {
@@ -160,8 +174,8 @@ const AttendancePage = () => {
             if (error) throw error;
             toast.success(`SMS ${absentList.length} ta o'quvchiga yuborildi!`);
             setSmsModalOpen(false);
-            lockDay(today);
-            setDayLocked(true);
+            lockGroup(today, selectedGroupId);
+            setLockedGroups(prev => new Set([...prev, selectedGroupId]));
             fetchData();
         } catch {
             toast.error('SMS yuborishda xatolik yuz berdi');
@@ -172,40 +186,125 @@ const AttendancePage = () => {
 
     const handleSkipSms = () => {
         setSmsModalOpen(false);
-        lockDay(today);
-        setDayLocked(true);
+        lockGroup(today, selectedGroupId);
+        setLockedGroups(prev => new Set([...prev, selectedGroupId]));
         toast.success("Davomat tasdiqlandi (SMS yuborilmadi)");
     };
 
-    // Helper: check if a group has class today (and time hasn't passed)
-    const getGroupScheduleStatus = (g) => {
-        if (!g) return 'ok';
-        const days = g.schedule_days;
-        const hasSchedule = days?.length > 0 || g.schedule_start;
-        if (!hasSchedule) return 'ok';
-        if (days?.length > 0 && !days.includes(now.getDay())) return 'wrong_day';
-        if (g.schedule_end) {
-            const [endH, endM] = String(g.schedule_end).split(':').map(Number);
-            const endMins = endH * 60 + endM;
-            if (now.getHours() * 60 + now.getMinutes() > endMins) return 'time_over';
-        }
-        return 'ok';
-    };
+    // ─── SCREEN 1: Group Cards ──────────────────────────────────────────────
+    if (selectedGroupId === null) {
+        return (
+            <div className="space-y-5">
+                {/* Header */}
+                <div>
+                    <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Davomat</h1>
+                    <p className="text-sm text-slate-400 mt-0.5">
+                        {todayLabel} · <span className="font-semibold text-primary">{currentTime}</span>
+                    </p>
+                </div>
 
-    // Groups that have class today (not blocked by schedule)
-    const todayGroupIds = new Set(
-        groups.filter(g => getGroupScheduleStatus(g) === 'ok').map(g => g.id)
-    );
+                {loading ? (
+                    <div className="py-20 text-center text-slate-400 text-sm">Yuklanmoqda...</div>
+                ) : todayGroups.length === 0 ? (
+                    <div className="py-20 flex flex-col items-center gap-3">
+                        <FiCalendar className="w-10 h-10 text-slate-300" />
+                        <p className="text-slate-500 font-semibold">Bugun dars yo'q</p>
+                        <p className="text-slate-400 text-sm text-center">Hech bir guruhda bugun dars jadval belgilanmagan</p>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {todayGroups.map((group, idx) => {
+                            const groupStudents = students.filter(s =>
+                                s.student_groups?.some(sg => sg.group_id === group.id)
+                            );
+                            const total = groupStudents.length;
+                            const present = groupStudents.filter(s => attendanceMap[s.id]?.status === 'present').length;
+                            const absent = groupStudents.filter(s => attendanceMap[s.id]?.status === 'absent').length;
+                            const isLocked = lockedGroups.has(group.id);
 
-    // Schedule-based access control for the selected group
-    const activeGroup = activeGroupId === 'all' ? null : groups.find(g => g.id === activeGroupId);
-    const scheduleStatus = activeGroupId === 'all' ? 'ok' : getGroupScheduleStatus(activeGroup);
+                            return (
+                                <motion.div
+                                    key={group.id}
+                                    initial={{ opacity: 0, y: 16 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: idx * 0.06, duration: 0.25 }}
+                                    onClick={() => setSelectedGroupId(group.id)}
+                                    className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 cursor-pointer hover:shadow-md hover:border-primary/30 transition-all group"
+                                >
+                                    {/* Group name & lock */}
+                                    <div className="flex items-start justify-between gap-2">
+                                        <h3 className="text-lg font-bold text-slate-900 dark:text-white leading-tight">{group.name}</h3>
+                                        {isLocked && (
+                                            <span className="flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 flex-shrink-0">
+                                                <FiLock className="w-3 h-3" /> Tasdiqlangan
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {/* Schedule time */}
+                                    {(group.schedule_start || group.schedule_end) && (
+                                        <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
+                                            <FiClock className="w-3 h-3" />
+                                            {group.schedule_start ? String(group.schedule_start).slice(0, 5) : ''}
+                                            {group.schedule_start && group.schedule_end ? ' – ' : ''}
+                                            {group.schedule_end ? String(group.schedule_end).slice(0, 5) : ''}
+                                        </p>
+                                    )}
+
+                                    {/* Stats */}
+                                    <div className="mt-4 space-y-1.5">
+                                        <div className="flex items-center gap-2 text-sm text-slate-500">
+                                            <FiUsers className="w-3.5 h-3.5" />
+                                            <span>{total} nafar o'quvchi</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                                            <span className="w-3.5 text-center font-bold">✓</span>
+                                            <span>Keldi: <span className="font-bold">{present}</span></span>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-sm text-rose-500">
+                                            <span className="w-3.5 text-center font-bold">✗</span>
+                                            <span>Kelmadi: <span className="font-bold">{absent}</span></span>
+                                        </div>
+                                    </div>
+
+                                    {/* Progress bar */}
+                                    {total > 0 && (
+                                        <div className="mt-4 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                                            <div
+                                                className="h-full bg-primary rounded-full transition-all"
+                                                style={{ width: `${Math.round((present / total) * 100)}%` }}
+                                            />
+                                        </div>
+                                    )}
+
+                                    {/* Bottom action */}
+                                    <div className="mt-4 flex items-center justify-between">
+                                        {isLocked ? (
+                                            <span className="text-xs text-slate-400">Ko'rish uchun bosing</span>
+                                        ) : (
+                                            <span className="text-xs font-semibold text-primary group-hover:underline">
+                                                Yo'qlama olish →
+                                            </span>
+                                        )}
+                                    </div>
+                                </motion.div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    // ─── SCREEN 2: Attendance for selected group ────────────────────────────
+    const selectedGroup = groups.find(g => g.id === selectedGroupId);
+    const groupLocked = lockedGroups.has(selectedGroupId);
+    const scheduleStatus = getGroupScheduleStatus(selectedGroup);
     const scheduleBlocked = scheduleStatus !== 'ok';
 
-    const visibleStudents = (activeGroupId === 'all'
-        ? students.filter(s => s.student_groups?.some(sg => todayGroupIds.has(sg.group_id)))
-        : students.filter(s => s.student_groups?.some(sg => sg.group_id === activeGroupId))
-    ).filter(s => s.full_name.toLowerCase().includes(searchTerm.toLowerCase()));
+    const visibleStudents = students
+        .filter(s => s.student_groups?.some(sg => sg.group_id === selectedGroupId))
+        .filter(s => s.full_name.toLowerCase().includes(searchTerm.toLowerCase()));
 
     const presentCount = visibleStudents.filter(s => attendanceMap[s.id]?.status === 'present').length;
     const absentCount  = visibleStudents.filter(s => attendanceMap[s.id]?.status === 'absent').length;
@@ -216,58 +315,27 @@ const AttendancePage = () => {
         <>
         <div className="space-y-5 pb-24">
 
-            {/* Header */}
-            <div className="flex items-start justify-between gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Davomat</h1>
+            {/* Header with back button */}
+            <div className="flex items-center gap-3">
+                <button
+                    onClick={() => { setSelectedGroupId(null); setSearchTerm(''); }}
+                    className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition text-slate-500 hover:text-slate-800 dark:hover:text-white"
+                >
+                    <FiArrowLeft className="w-5 h-5" />
+                </button>
+                <div className="flex-1 min-w-0">
+                    <h1 className="text-xl font-bold text-slate-900 dark:text-white truncate">{selectedGroup?.name}</h1>
                     <p className="text-sm text-slate-400 mt-0.5">
                         {todayLabel} · <span className="font-semibold text-primary">{currentTime}</span>
                     </p>
                 </div>
-                {dayLocked && (
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
-                        <FiLock className="w-4 h-4 text-green-600 dark:text-green-400" />
-                        <span className="text-sm font-semibold text-green-700 dark:text-green-300">Tasdiqlangan</span>
+                {groupLocked && (
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 flex-shrink-0">
+                        <FiLock className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
+                        <span className="text-xs font-bold text-green-700 dark:text-green-300">Tasdiqlangan</span>
                     </div>
                 )}
             </div>
-
-            {/* Group Tabs */}
-            {groups.length > 0 && (
-                <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
-                    <button
-                        onClick={() => setActiveGroupId('all')}
-                        className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${activeGroupId === 'all'
-                            ? 'bg-primary text-white shadow-sm'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                        }`}
-                    >
-                        Bugungi ({students.filter(s => s.student_groups?.some(sg => todayGroupIds.has(sg.group_id))).length})
-                    </button>
-                    {groups.map(g => {
-                        const isToday = todayGroupIds.has(g.id);
-                        const groupStatus = getGroupScheduleStatus(g);
-                        return (
-                            <button
-                                key={g.id}
-                                onClick={() => isToday && setActiveGroupId(g.id)}
-                                title={!isToday ? (groupStatus === 'wrong_day' ? 'Bu guruh bugun dars qilmaydi' : 'Davomat vaqti tugadi') : undefined}
-                                className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${activeGroupId === g.id
-                                    ? isToday
-                                        ? 'bg-primary text-white shadow-sm'
-                                        : 'bg-slate-400 text-white shadow-sm'
-                                    : isToday
-                                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600 opacity-50 cursor-not-allowed'
-                                }`}
-                            >
-                                {g.name} ({students.filter(s => s.student_groups?.some(sg => sg.group_id === g.id)).length})
-                                {!isToday && <span className="ml-1 text-[10px]">🔒</span>}
-                            </button>
-                        );
-                    })}
-                </div>
-            )}
 
             {/* Schedule warning banners */}
             {scheduleStatus === 'wrong_day' && (
@@ -276,7 +344,7 @@ const AttendancePage = () => {
                     <div>
                         <p className="font-bold text-amber-800 dark:text-amber-300 text-sm">Bu guruh bugun dars qilmaydi</p>
                         <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
-                            Dars kunlari: {activeGroup?.schedule_days?.map(d => WEEK_DAYS[d]).join(', ')}
+                            Dars kunlari: {selectedGroup?.schedule_days?.map(d => WEEK_DAYS[d]).join(', ')}
                         </p>
                     </div>
                 </div>
@@ -287,7 +355,7 @@ const AttendancePage = () => {
                     <div>
                         <p className="font-bold text-slate-700 dark:text-slate-300 text-sm">Davomat vaqti tugadi</p>
                         <p className="text-xs text-slate-400 mt-0.5">
-                            Dars {String(activeGroup?.schedule_end).slice(0, 5)} da tugagan — davomat olinishi mumkin emas
+                            Dars {String(selectedGroup?.schedule_end).slice(0, 5)} da tugagan
                         </p>
                     </div>
                 </div>
@@ -334,12 +402,12 @@ const AttendancePage = () => {
                                         initial={{ opacity: 0, x: -8 }}
                                         animate={{ opacity: 1, x: 0 }}
                                         transition={{ delay: idx * 0.025, duration: 0.2 }}
-                                        onClick={() => !isSaving && !dayLocked && !scheduleBlocked && handleToggle(student.id)}
+                                        onClick={() => !isSaving && !groupLocked && !scheduleBlocked && handleToggle(student.id)}
                                         className={`flex items-center justify-between px-5 py-3.5 transition-colors select-none ${
-                                            dayLocked || scheduleBlocked ? 'cursor-default opacity-75' : 'cursor-pointer'
+                                            groupLocked || scheduleBlocked ? 'cursor-default opacity-75' : 'cursor-pointer'
                                         } ${!isPresent ? 'bg-rose-50/40 dark:bg-rose-900/10' : ''} ${
-                                            !dayLocked && !isPresent ? 'hover:bg-rose-50 dark:hover:bg-rose-900/20' : ''
-                                        } ${!dayLocked && isPresent ? 'hover:bg-slate-50 dark:hover:bg-slate-800/40' : ''}`}
+                                            !groupLocked && !isPresent ? 'hover:bg-rose-50 dark:hover:bg-rose-900/20' : ''
+                                        } ${!groupLocked && isPresent ? 'hover:bg-slate-50 dark:hover:bg-slate-800/40' : ''}`}
                                     >
                                         <div className="flex items-center gap-3 min-w-0">
                                             <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 text-sm font-bold ${isPresent ? 'bg-primary/10 text-primary' : 'bg-rose-100 dark:bg-rose-900/30 text-rose-500'}`}>
@@ -348,9 +416,6 @@ const AttendancePage = () => {
                                             <div className="min-w-0">
                                                 <p className="font-semibold text-slate-800 dark:text-slate-200 text-sm truncate">{student.full_name}</p>
                                                 <div className="flex items-center gap-2 mt-0.5">
-                                                    {student.groups?.name && (
-                                                        <span className="text-xs text-slate-400 truncate">{student.groups.name}</span>
-                                                    )}
                                                     {!isPresent && smsSent && (
                                                         <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
                                                             SMS ✓
@@ -360,7 +425,6 @@ const AttendancePage = () => {
                                             </div>
                                         </div>
 
-                                        {/* Checkbox */}
                                         <div className="flex items-center gap-2.5 flex-shrink-0">
                                             <motion.span
                                                 key={isPresent ? 'present' : 'absent'}
@@ -372,7 +436,7 @@ const AttendancePage = () => {
                                             </motion.span>
 
                                             <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 transition-all ${
-                                                dayLocked
+                                                groupLocked
                                                     ? isPresent
                                                         ? 'bg-primary/30 border-primary/30'
                                                         : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700'
@@ -384,7 +448,7 @@ const AttendancePage = () => {
                                             }`}>
                                                 {isSaving ? (
                                                     <div className="w-3 h-3 border-[1.5px] border-primary/40 border-t-primary rounded-full animate-spin" />
-                                                ) : dayLocked ? (
+                                                ) : groupLocked ? (
                                                     <FiLock className={`w-3 h-3 ${isPresent ? 'text-primary/60' : 'text-slate-400'}`} />
                                                 ) : isPresent ? (
                                                     <svg className="w-3.5 h-3.5 text-white" viewBox="0 0 12 10" fill="none">
@@ -403,7 +467,7 @@ const AttendancePage = () => {
         </div>
 
         {/* Fixed bottom confirm button */}
-        {!dayLocked && !loading && students.length > 0 && !scheduleBlocked && (
+        {!groupLocked && !loading && visibleStudents.length > 0 && !scheduleBlocked && (
             <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 z-40 sm:left-64">
                 <button
                     onClick={handleConfirm}
@@ -436,7 +500,6 @@ const AttendancePage = () => {
                             </p>
                         </div>
 
-                        {/* Absent students list */}
                         <div className="px-5 pt-4 max-h-36 overflow-y-auto space-y-1.5">
                             {absentList.map(rec => (
                                 <div key={rec.id} className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
