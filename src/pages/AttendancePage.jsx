@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { getStudents } from '../services/studentsService';
 import { getGroups } from '../services/groupsService';
 import { getAttendanceByDate, saveAttendance, getAbsentWithoutSms } from '../services/attendanceService';
@@ -51,10 +51,7 @@ const AttendancePage = () => {
     const dd = String(now.getDate()).padStart(2, '0');
     const mm = String(now.getMonth() + 1).padStart(2, '0');
     const yyyy = now.getFullYear();
-    const hh = String(now.getHours()).padStart(2, '0');
-    const min = String(now.getMinutes()).padStart(2, '0');
     const todayLabel = `${dd}.${mm}.${yyyy}-yil, ${weekdays[now.getDay()]}`;
-    const currentTime = `${hh}:${min}`;
 
     useEffect(() => { fetchData(); }, []);
 
@@ -171,9 +168,17 @@ const AttendancePage = () => {
                 group_id: selectedGroupId,
             };
             if (selectedTemplateId) body.template_id = selectedTemplateId;
-            const { error } = await supabase.functions.invoke('sms-sender', { body });
+            const { data, error } = await supabase.functions.invoke('sms-sender', { body });
             if (error) throw error;
-            toast.success(`SMS ${absentList.length} ta o'quvchiga yuborildi!`);
+            const sent   = data?.sent   ?? 0;
+            const failed = data?.failed ?? 0;
+            if (failed > 0 && sent === 0) {
+                toast.error(`SMS yuborilmadi — ${failed} ta o'quvchida telefon raqami yo'q yoki xatolik yuz berdi`);
+            } else if (failed > 0) {
+                toast.success(`SMS: ${sent} ta yuborildi, ${failed} ta yuborilmadi (telefon yo'q yoki xato)`, { duration: 5000 });
+            } else {
+                toast.success(`SMS ${sent} ta o'quvchiga muvaffaqiyatli yuborildi!`);
+            }
             setSmsModalOpen(false);
             lockGroup(today, selectedGroupId);
             setLockedGroups(prev => new Set([...prev, selectedGroupId]));
@@ -498,15 +503,21 @@ const AttendancePage = () => {
                         </div>
 
                         <div className="px-5 pt-4 max-h-36 overflow-y-auto space-y-1.5">
-                            {absentList.map(rec => (
+                            {absentList.map(rec => {
+                                const hasPhone = !!rec.students?.parent_phone;
+                                return (
                                 <div key={rec.id} className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
                                     <div className="w-6 h-6 rounded-lg bg-rose-100 dark:bg-rose-900/30 text-rose-500 flex items-center justify-center text-xs font-bold flex-shrink-0">
                                         {rec.students?.full_name?.charAt(0).toUpperCase()}
                                     </div>
                                     <span className="truncate font-medium">{rec.students?.full_name}</span>
-                                    <span className="text-xs text-slate-400 flex-shrink-0 ml-auto">{rec.students?.parent_phone}</span>
+                                    {hasPhone
+                                        ? <span className="text-xs text-slate-400 flex-shrink-0 ml-auto">{rec.students.parent_phone}</span>
+                                        : <span className="text-xs text-amber-500 font-semibold flex-shrink-0 ml-auto">☎ raqam yo'q</span>
+                                    }
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
 
                         <div className="p-5 space-y-3">

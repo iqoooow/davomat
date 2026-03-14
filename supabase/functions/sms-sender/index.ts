@@ -142,6 +142,13 @@ serve(async (req) => {
 
       if (!phone) {
         failed++
+        await supabase.from('sms_history').insert({
+          student_id: rec.student_id,
+          phone: null,
+          message: null,
+          status: 'failed',
+          error_msg: 'Telefon raqami kiritilmagan',
+        })
         continue
       }
 
